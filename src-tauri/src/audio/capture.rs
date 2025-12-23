@@ -53,7 +53,6 @@ pub struct AudioCapture {
     native_sample_rate: u32,
     is_recording: Arc<AtomicBool>,
     audio_sender: Sender<Vec<f32>>,
-    audio_receiver: Receiver<Vec<f32>>,
     // Streaming mode channels
     event_sender: Sender<AudioEvent>,
     event_receiver: Receiver<AudioEvent>,
@@ -107,7 +106,7 @@ impl AudioCapture {
 
         let native_sample_rate = default_config.sample_rate().0;
 
-        let (sender, receiver) = bounded(100);
+        let (sender, _receiver) = bounded(100);
         let (event_sender, event_receiver) = bounded(100);
 
         Ok(Self {
@@ -116,7 +115,6 @@ impl AudioCapture {
             native_sample_rate,
             is_recording: Arc::new(AtomicBool::new(false)),
             audio_sender: sender,
-            audio_receiver: receiver,
             event_sender,
             event_receiver,
             vad_config,
@@ -236,10 +234,6 @@ impl AudioCapture {
 
         stream.play()?;
         Ok(stream)
-    }
-
-    pub fn receiver(&self) -> Receiver<Vec<f32>> {
-        self.audio_receiver.clone()
     }
 
     /// Get receiver for streaming audio events (chunks during speech + final utterance)

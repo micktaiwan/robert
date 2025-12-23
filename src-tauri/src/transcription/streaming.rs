@@ -6,20 +6,14 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 /// Configuration for streaming transcription
 #[derive(Clone, Copy)]
 pub struct StreamingConfig {
-    /// How often to run transcription (ms)
-    pub step_ms: usize,
     /// Total audio window length for each transcription (ms)
     pub length_ms: usize,
-    /// Overlap to keep from previous window (ms) - prevents cutting words
-    pub keep_ms: usize,
 }
 
 impl Default for StreamingConfig {
     fn default() -> Self {
         Self {
-            step_ms: 800,      // Transcribe every 800ms
             length_ms: 5000,   // Use 5 seconds of audio context
-            keep_ms: 200,      // 200ms overlap
         }
     }
 }
@@ -29,10 +23,6 @@ impl Default for StreamingConfig {
 pub struct StreamingResult {
     /// The transcribed text for this window
     pub text: String,
-    /// Whether this is a partial result (more audio coming) or final
-    pub is_partial: bool,
-    /// Accumulated confirmed text so far
-    pub confirmed_text: String,
 }
 
 /// Streaming transcriber using sliding window approach
@@ -98,31 +88,9 @@ impl StreamingTranscriber {
         }
     }
 
-    /// Get the number of samples needed before transcription
-    pub fn samples_per_step(&self) -> usize {
-        (16000 * self.config.step_ms) / 1000
-    }
-
-    /// Get current buffer length in samples
-    pub fn buffer_len(&self) -> usize {
-        self.audio_buffer.len()
-    }
-
-    /// Check if we have enough audio for a transcription step
-    pub fn ready_for_transcription(&self) -> bool {
-        let min_samples = (16000 * self.config.step_ms) / 1000;
-        self.audio_buffer.len() >= min_samples
-    }
-
-    /// Set initial prompt for context (e.g., previous confirmed text)
-    pub fn set_initial_prompt(&mut self, prompt: &str) {
-        self.initial_prompt = prompt.to_string();
-    }
-
     /// Transcribe current audio window
     pub fn transcribe(&mut self) -> Result<StreamingResult> {
         let length_samples = (16000 * self.config.length_ms) / 1000;
-        let keep_samples = (16000 * self.config.keep_ms) / 1000;
 
         // Get audio window (last length_ms of audio)
         let buffer_len = self.audio_buffer.len();
@@ -132,8 +100,6 @@ impl StreamingTranscriber {
         if samples.is_empty() {
             return Ok(StreamingResult {
                 text: String::new(),
-                is_partial: true,
-                confirmed_text: self.confirmed_text.clone(),
             });
         }
 
@@ -142,15 +108,10 @@ impl StreamingTranscriber {
         let text = text.trim().to_string();
 
         // Local Agreement: confirm text if it matches previous transcription
-        let new_text = self.apply_local_agreement(&text);
-
-        // Keep only the overlap portion for next iteration
-        // (The audio_buffer naturally handles this as we keep pushing)
+        let _ = self.apply_local_agreement(&text);
 
         Ok(StreamingResult {
-            text: text.clone(),
-            is_partial: true,
-            confirmed_text: self.confirmed_text.clone(),
+            text,
         })
     }
 
@@ -161,11 +122,6 @@ impl StreamingTranscriber {
         self.previous_text.clear();
         self.agreement_count = 0;
         self.initial_prompt.clear();
-    }
-
-    /// Clear only the audio buffer but keep context
-    pub fn clear_audio(&mut self) {
-        self.audio_buffer.clear();
     }
 
     fn transcribe_samples(&self, samples: &[f32]) -> Result<String> {

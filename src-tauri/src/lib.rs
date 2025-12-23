@@ -27,7 +27,7 @@ use transcription::{Transcriber, StreamingTranscriber, StreamingConfig};
 pub type DbState = Arc<Mutex<Database>>;
 pub type CopilotState = Arc<std::sync::RwLock<CopilotUIState>>;
 
-const WHISPER_MODEL: &str = "models/ggml-small.bin";
+const WHISPER_MODEL_FILENAME: &str = "ggml-small.bin";
 
 const WAKE_PATTERNS: &[&str] = &["ok robert", "okay robert", "hey robert", "robert,", "robert "];
 
@@ -67,13 +67,30 @@ pub fn run() {
             setup_tray(app)?;
             setup_global_shortcut(app, db.clone())?;
 
+            // Resolve whisper model path
+            // In dev: look in src-tauri/models/
+            // In production: look in ~/Library/Application Support/com.robert.Robert/models/
+            let whisper_path = {
+                // First try dev path (relative to src-tauri/)
+                let dev_path = std::path::PathBuf::from("models").join(WHISPER_MODEL_FILENAME);
+                if dev_path.exists() {
+                    dev_path
+                } else {
+                    // Production: use app data directory
+                    let app_data = app.path().app_data_dir()
+                        .expect("Failed to get app data directory");
+                    app_data.join("models").join(WHISPER_MODEL_FILENAME)
+                }
+            };
+            println!("[Robert] Whisper model path: {}", whisper_path.display());
+
             // Start audio processing in background
             let app_handle = app.handle().clone();
             let state_clone = app.state::<Arc<RwLock<AppState>>>().inner().clone();
             let copilot_clone = copilot_state.clone();
             let db_clone = db.clone();
             std::thread::spawn(move || {
-                if let Err(e) = audio_processing_loop(app_handle, state_clone, copilot_clone, db_clone) {
+                if let Err(e) = audio_processing_loop(app_handle, state_clone, copilot_clone, db_clone, whisper_path) {
                     eprintln!("Audio processing error: {}", e);
                 }
             });
@@ -326,12 +343,16 @@ fn audio_processing_loop(
     state: Arc<RwLock<AppState>>,
     copilot_state: CopilotState,
     db: Option<DbState>,
+    whisper_path: std::path::PathBuf,
 ) -> anyhow::Result<()> {
-    let whisper_path = std::path::Path::new(WHISPER_MODEL);
-
     if !whisper_path.exists() {
-        eprintln!("Whisper model not found at {}", WHISPER_MODEL);
-        eprintln!("Download with: curl -L -o models/ggml-small.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin");
+        let error_msg = format!(
+            "Whisper model not found!\n\nExpected at:\n{}\n\nDownload with:\ncurl -L -o \"{}\" https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+            whisper_path.display(),
+            whisper_path.display()
+        );
+        eprintln!("[Robert] {}", error_msg);
+        let _ = app.emit("error", &error_msg);
         return Ok(());
     }
 
@@ -340,10 +361,10 @@ fn audio_processing_loop(
 
     // Use streaming transcriber for real-time wake word detection
     let streaming_config = StreamingConfig::default();
-    let mut streaming_transcriber = StreamingTranscriber::new(whisper_path, streaming_config)?;
+    let mut streaming_transcriber = StreamingTranscriber::new(&whisper_path, streaming_config)?;
 
     // Keep regular transcriber for final transcription (better accuracy)
-    let mut final_transcriber = Transcriber::new(whisper_path)?;
+    let mut final_transcriber = Transcriber::new(&whisper_path)?;
 
     println!("[{}] Whisper ready (streaming)", timestamp());
 

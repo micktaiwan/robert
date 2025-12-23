@@ -38,12 +38,28 @@ pub async fn save_settings(
 }
 
 #[tauri::command]
-pub async fn get_models() -> Result<Vec<ModelInfo>, String> {
-    let models_dir = std::path::Path::new("models");
+pub async fn get_models(app: tauri::AppHandle) -> Result<Vec<ModelInfo>, String> {
+    use tauri::Manager;
+
     let mut models = Vec::new();
 
+    // Try dev path first (relative to src-tauri/)
+    let dev_models_dir = std::path::PathBuf::from("models");
+
+    // Production path: ~/Library/Application Support/com.robert.Robert/models/
+    let prod_models_dir = app.path().app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("models");
+
+    // Use whichever exists
+    let models_dir = if dev_models_dir.exists() {
+        dev_models_dir
+    } else {
+        prod_models_dir
+    };
+
     if models_dir.exists() {
-        if let Ok(entries) = std::fs::read_dir(models_dir) {
+        if let Ok(entries) = std::fs::read_dir(&models_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {

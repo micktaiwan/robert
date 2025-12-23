@@ -16,6 +16,7 @@ function Overlay() {
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState("Loading...");
   const [showResponse, setShowResponse] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const unlistenReady = listen("ready", () => {
@@ -24,6 +25,11 @@ function Overlay() {
 
     const unlistenLoading = listen<string>("loading", (event) => {
       setStatus(event.payload);
+    });
+
+    const unlistenError = listen<string>("error", (event) => {
+      setError(event.payload);
+      setStatus("");
     });
 
     const unlistenTranscription = listen<string>("transcription", (event) => {
@@ -54,6 +60,7 @@ function Overlay() {
     return () => {
       unlistenReady.then((fn) => fn());
       unlistenLoading.then((fn) => fn());
+      unlistenError.then((fn) => fn());
       unlistenTranscription.then((fn) => fn());
       unlistenResponse.then((fn) => fn());
       unlistenRecordingStarted.then((fn) => fn());
@@ -109,7 +116,9 @@ function Overlay() {
         </div>
       )}
 
-      {status ? (
+      {error ? (
+        <p style={{ color: "#ff3b30", fontSize: "14px", margin: 0, whiteSpace: "pre-wrap", textAlign: "left", flex: 1 }}>{error}</p>
+      ) : status ? (
         <p style={{ color: "#888", fontSize: "16px", margin: 0 }}>{status}</p>
       ) : showResponse && responseHtml ? (
         <div

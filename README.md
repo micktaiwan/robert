@@ -34,9 +34,13 @@ A local voice assistant for macOS built with Tauri 2. Robert continuously listen
 
 3. Download the Whisper model:
    ```bash
+   # For development:
    mkdir -p src-tauri/models
-   # Download ggml-small.bin from HuggingFace whisper.cpp repo
-   # Place it in src-tauri/models/ggml-small.bin
+   curl -L -o src-tauri/models/ggml-small.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
+
+   # For production (after build):
+   mkdir -p ~/Library/Application\ Support/com.robert.voiceassistant/models
+   curl -L -o ~/Library/Application\ Support/com.robert.voiceassistant/models/ggml-small.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin
    ```
 
 4. Run in development mode:
