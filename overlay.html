@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Robert</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; background: transparent; }
+      .container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        padding: 0 20px;
+        background: rgba(20, 20, 25, 0.85);
+        border-radius: 12px;
+      }
+      .text { color: #e0e0e0; font-size: 18px; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+      .loading { color: #888; }
+      .transcription { color: #fff; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <p id="content" class="text loading">Starting...</p>
+    </div>
+    <script>
+      const content = document.getElementById('content');
+      const { listen } = window.__TAURI__.event;
+      const { getCurrentWindow } = window.__TAURI__.window;
+
+      let isStartup = true;
+      let hideTimer = null;
+
+      function scheduleHide() {
+        if (isStartup) return;
+        clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
+          getCurrentWindow().hide();
+        }, 3000);
+      }
+
+      listen('loading', (e) => {
+        content.textContent = e.payload;
+        content.className = 'text loading';
+      });
+
+      listen('ready', () => {
+        content.textContent = 'Listening...';
+        content.className = 'text loading';
+        isStartup = false;
+        scheduleHide();
+      });
+
+      listen('transcription', (e) => {
+        getCurrentWindow().show();
+        content.textContent = e.payload;
+        content.className = 'text transcription';
+        scheduleHide();
+      });
+    </script>
+  </body>
+</html>

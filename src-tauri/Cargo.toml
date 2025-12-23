@@ -1,0 +1,47 @@
+[package]
+name = "robert"
+version = "0.2.0"
+edition = "2021"
+description = "Local voice assistant for macOS"
+
+[lib]
+name = "robert_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+tauri-plugin-global-shortcut = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Audio capture
+cpal = "0.15"
+
+# Transcription (Metal GPU)
+whisper-rs = { version = "0.12", features = ["metal"] }
+
+# LLM - Anthropic API (manual implementation with streaming)
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
+futures = "0.3"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+directories = "5"
+
+# Threading
+crossbeam-channel = "0.5"
+tokio = { version = "1", features = ["full"] }
+
+# Utils
+anyhow = "1"
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2"
