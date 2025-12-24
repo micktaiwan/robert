@@ -205,3 +205,43 @@ pub async fn test_mcp_server(url: String) -> Result<Vec<String>, String> {
         .await
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+#[allow(deprecated)] // cocoa/objc crates are deprecated in favor of objc2, but still work
+pub fn set_copilot_alpha(app: tauri::AppHandle, alpha: f64) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("copilot") {
+        #[cfg(target_os = "macos")]
+        {
+            use cocoa::appkit::NSWindow;
+            use cocoa::base::id;
+            use objc::msg_send;
+            use objc::sel;
+            use objc::sel_impl;
+            use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+
+            let handle = window.window_handle().map_err(|e| e.to_string())?;
+            if let RawWindowHandle::AppKit(appkit_handle) = handle.as_raw() {
+                let ns_view = appkit_handle.ns_view.as_ptr() as id;
+                unsafe {
+                    // Get NSWindow from NSView and set alpha
+                    let ns_window: id = msg_send![ns_view, window];
+                    ns_window.setAlphaValue_(alpha);
+                }
+            }
+        }
+        Ok(())
+    } else {
+        Err("Copilot window not found".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn hide_copilot(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("copilot") {
+        window.hide().map_err(|e| e.to_string())
+    } else {
+        Err("Copilot window not found".to_string())
+    }
+}

@@ -34,6 +34,7 @@ pub struct CopilotUIState {
     pub state: String,
     pub response_text: String,
     pub should_close: bool,
+    pub heard_text: String,
 }
 
 impl CopilotUIState {
@@ -43,6 +44,7 @@ impl CopilotUIState {
             state: "idle".to_string(),
             response_text: String::new(),
             should_close: false,
+            heard_text: String::new(),
         }
     }
 
@@ -51,6 +53,7 @@ impl CopilotUIState {
         self.state = "idle".to_string();
         self.response_text.clear();
         self.should_close = false;
+        self.heard_text.clear();
     }
 }
 

@@ -1,13 +1,14 @@
 {
   "identifier": "default",
   "description": "Default capabilities for Robert",
-  "windows": ["main", "overlay", "settings"],
+  "windows": ["main", "overlay", "settings", "copilot"],
   "permissions": [
     "core:default",
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-set-focus",
     "core:window:allow-close",
-    "core:window:allow-is-visible"
+    "core:window:allow-is-visible",
+    "core:window:allow-set-ignore-cursor-events"
   ]
 }

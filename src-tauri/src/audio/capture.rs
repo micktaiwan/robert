@@ -15,7 +15,7 @@ const MIN_SPEECH_DURATION_MS: usize = 400; // Minimum speech duration to process
 const MAX_SPEECH_DURATION_MS: usize = 10000; // Max duration before forced processing
 
 // Streaming mode parameters
-const STREAMING_CHUNK_MS: usize = 800; // Send chunks every 800ms for streaming transcription
+const STREAMING_CHUNK_MS: usize = 600; // Send chunks every 600ms for streaming transcription
 
 #[derive(Clone, Copy)]
 pub struct VadConfig {

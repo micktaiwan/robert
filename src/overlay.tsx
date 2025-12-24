@@ -12,55 +12,124 @@ marked.setOptions({
 
 function Overlay() {
   const [transcription, setTranscription] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
   const [response, setResponse] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [status, setStatus] = useState("Loading...");
   const [showResponse, setShowResponse] = useState(false);
   const [error, setError] = useState("");
+  const [isVisible, setIsVisible] = useState(true);
+  const fadeTimeoutRef = React.useRef<number | null>(null);
+  const isMouseOverRef = React.useRef(false);
+
+  // Auto-hide after inactivity
+  const resetFadeTimeout = () => {
+    if (fadeTimeoutRef.current) {
+      clearTimeout(fadeTimeoutRef.current);
+    }
+    setIsVisible(true);
+    fadeTimeoutRef.current = window.setTimeout(() => {
+      // Don't hide if mouse is over the overlay
+      if (!isMouseOverRef.current) {
+        setIsVisible(false);
+      }
+    }, 5000); // Fade after 5 seconds of inactivity
+  };
+
+  // Show overlay immediately (for activity)
+  const showOverlay = () => {
+    if (fadeTimeoutRef.current) {
+      clearTimeout(fadeTimeoutRef.current);
+      fadeTimeoutRef.current = null;
+    }
+    setIsVisible(true);
+  };
 
   useEffect(() => {
+    // Start the initial fade timeout
+    resetFadeTimeout();
+
+    // Native macOS mouse tracking events (from macos_tracking.rs)
+    const unlistenMouseEnter = listen("overlay-mouse-enter", () => {
+      console.log("Mouse entered overlay (native)");
+      isMouseOverRef.current = true;
+      showOverlay();
+    });
+
+    const unlistenMouseLeave = listen("overlay-mouse-leave", () => {
+      console.log("Mouse left overlay (native)");
+      isMouseOverRef.current = false;
+      resetFadeTimeout();
+    });
+
     const unlistenReady = listen("ready", () => {
       setStatus("");
+      resetFadeTimeout();
     });
 
     const unlistenLoading = listen<string>("loading", (event) => {
       setStatus(event.payload);
+      showOverlay();
     });
 
     const unlistenError = listen<string>("error", (event) => {
       setError(event.payload);
       setStatus("");
+      showOverlay();
     });
 
+    // Streaming transcription (orange)
+    const unlistenStreaming = listen<string>("transcription-streaming", (event) => {
+      setTranscription(event.payload);
+      setIsStreaming(true);
+      setShowResponse(false);
+      showOverlay();
+    });
+
+    // Final transcription (white)
     const unlistenTranscription = listen<string>("transcription", (event) => {
       setTranscription(event.payload);
+      setIsStreaming(false);
       setShowResponse(false);
-      // Clear transcription after 3 seconds
-      setTimeout(() => setTranscription(""), 3000);
+      showOverlay();
+      setTimeout(() => {
+        setTranscription("");
+        resetFadeTimeout();
+      }, 3000);
     });
 
     const unlistenResponse = listen<string>("command-response", (event) => {
       setResponse(event.payload);
       setShowResponse(true);
-      // Clear response after 5 seconds
+      showOverlay();
+      // Clear response after 5 seconds, then start fade
       setTimeout(() => {
         setShowResponse(false);
         setResponse("");
+        resetFadeTimeout();
       }, 5000);
     });
 
     const unlistenRecordingStarted = listen<string>("recording-started", () => {
       setIsRecording(true);
+      showOverlay();
     });
 
     const unlistenRecordingStopped = listen<string>("recording-stopped", () => {
       setIsRecording(false);
+      resetFadeTimeout();
     });
 
     return () => {
+      if (fadeTimeoutRef.current) {
+        clearTimeout(fadeTimeoutRef.current);
+      }
+      unlistenMouseEnter.then((fn) => fn());
+      unlistenMouseLeave.then((fn) => fn());
       unlistenReady.then((fn) => fn());
       unlistenLoading.then((fn) => fn());
       unlistenError.then((fn) => fn());
+      unlistenStreaming.then((fn) => fn());
       unlistenTranscription.then((fn) => fn());
       unlistenResponse.then((fn) => fn());
       unlistenRecordingStarted.then((fn) => fn());
@@ -79,14 +148,17 @@ function Overlay() {
       style={{
         width: "100%",
         height: "100%",
-        background: "rgba(30, 30, 30, 0.95)",
+        background: "rgba(20, 20, 25, 0.85)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "0 16px",
+        padding: "0 20px",
         boxSizing: "border-box",
         borderRadius: "12px",
         gap: "12px",
+        fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+        opacity: isVisible ? 1 : 0.01,
+        transition: "opacity 0.5s ease-in-out",
       }}
     >
       {isRecording && (
@@ -137,7 +209,7 @@ function Overlay() {
       ) : transcription ? (
         <p
           style={{
-            color: "white",
+            color: isStreaming ? "#ff9500" : "white",
             fontSize: "18px",
             margin: 0,
             textAlign: "center",

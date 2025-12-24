@@ -1,6 +1,10 @@
+#![allow(unexpected_cfgs)] // objc macro generates cfg(cargo-clippy) checks
+
 mod audio;
 mod handlers;
 mod llm;
+#[cfg(target_os = "macos")]
+mod macos_tracking;
 mod mcp;
 mod state;
 mod storage;
@@ -64,6 +68,10 @@ pub fn run() {
             create_settings_window(app)?;
             create_copilot_window(app)?;
 
+            // Setup native mouse tracking for overlay (macOS only)
+            #[cfg(target_os = "macos")]
+            macos_tracking::setup_mouse_tracking(app.handle().clone());
+
             setup_tray(app)?;
             setup_global_shortcut(app, db.clone())?;
 
@@ -112,6 +120,8 @@ pub fn run() {
             handlers::get_recording_status,
             handlers::get_copilot_state,
             handlers::test_mcp_server,
+            handlers::set_copilot_alpha,
+            handlers::hide_copilot,
         ])
         .run(tauri::generate_context!())
         .expect("error running Robert");
@@ -241,7 +251,11 @@ fn create_overlay_window(app: &tauri::App) -> Result<(), Box<dyn std::error::Err
     .skip_taskbar(true)
     .visible(true)
     .transparent(true)
+    .accept_first_mouse(true)
     .build()?;
+
+    // Ensure cursor events are captured (not ignored)
+    overlay.set_ignore_cursor_events(false)?;
 
     if let Some(monitor) = overlay.current_monitor()? {
         let size = monitor.size();
@@ -451,8 +465,17 @@ fn audio_processing_loop(
                                     }
                                 }
 
-                                // Emit streaming transcription
-                                let _ = app.emit("transcription", &text);
+                                // Update heard_text in copilot OR emit to overlay (not both)
+                                if wake_word_detected {
+                                    // Show in copilot only
+                                    if let Some(command_text) = extract_command(&text) {
+                                        let mut copilot = copilot_state.write().unwrap();
+                                        copilot.heard_text = command_text;
+                                    }
+                                } else {
+                                    // Show in overlay only (no wake word)
+                                    let _ = app.emit("transcription-streaming", &text);
+                                }
                             }
                         }
                     }
@@ -525,12 +548,11 @@ fn audio_processing_loop(
                                     });
                                 }
 
-                                // Emit final transcription
-                                let _ = app.emit("transcription", &text);
-
+                                // Emit final transcription only if not a command
                                 if !is_command {
-                                    println!("[{}] {}", timestamp(), text);
+                                    let _ = app.emit("transcription", &text);
                                 }
+
                             }
                         }
 

@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import ReactDOM from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { marked } from "marked";
 
 // Configure marked for inline rendering
@@ -18,6 +17,7 @@ interface CopilotUIState {
   state: string;
   response_text: string;
   should_close: boolean;
+  heard_text: string;
 }
 
 interface WaveAnimationProps {
@@ -105,11 +105,14 @@ const waveContainerStyle: React.CSSProperties = {
 function Copilot() {
   const [state, setState] = useState<CopilotStateType>("idle");
   const [displayedText, setDisplayedText] = useState("");
+  const [heardText, setHeardText] = useState("");
+  const [isHovered, setIsHovered] = useState(false);
 
   const lastResponseTextRef = useRef<string>("");
   const animationRef = useRef<number | null>(null);
   const textQueueRef = useRef<string>("");
   const closeTimeoutRef = useRef<number | null>(null);
+  const fadeTimeoutRef = useRef<number | null>(null);
   const isClosingRef = useRef<boolean>(false);
   const textContainerRef = useRef<HTMLDivElement>(null);
 
@@ -150,6 +153,9 @@ function Copilot() {
         // Update state
         setState(newState);
 
+        // Update heard text
+        setHeardText(backendState.heard_text || "");
+
         // Handle text changes - find new characters to animate
         if (backendState.response_text !== lastResponseTextRef.current) {
           const newText = backendState.response_text;
@@ -170,18 +176,33 @@ function Copilot() {
           lastResponseTextRef.current = newText;
         }
 
-        // Handle close signal
+        // Handle close signal with fade-out
         if (backendState.should_close && !isClosingRef.current) {
           isClosingRef.current = true;
-          closeTimeoutRef.current = window.setTimeout(async () => {
-            await getCurrentWindow().hide();
-            // Reset local state
-            setState("idle");
-            setDisplayedText("");
-            lastResponseTextRef.current = "";
-            textQueueRef.current = "";
-            isClosingRef.current = false;
-          }, 5000);
+          // Start fade after 4.5s
+          closeTimeoutRef.current = window.setTimeout(() => {
+            // Animate window opacity from 1 to 0 over 500ms
+            let alpha = 1.0;
+            const fadeStep = () => {
+              alpha -= 0.05;
+              if (alpha <= 0) {
+                // Fade complete, hide window
+                if (!isClosingRef.current) return;
+                invoke("hide_copilot").then(() => {
+                  invoke("set_copilot_alpha", { alpha: 1.0 }); // Reset for next time
+                  setState("idle");
+                  setDisplayedText("");
+                  lastResponseTextRef.current = "";
+                  textQueueRef.current = "";
+                  isClosingRef.current = false;
+                });
+              } else {
+                invoke("set_copilot_alpha", { alpha });
+                fadeTimeoutRef.current = window.setTimeout(fadeStep, 25);
+              }
+            };
+            fadeStep();
+          }, 4500);
         }
 
         // Reset closing state if should_close became false (new command started)
@@ -190,7 +211,12 @@ function Copilot() {
             clearTimeout(closeTimeoutRef.current);
             closeTimeoutRef.current = null;
           }
+          if (fadeTimeoutRef.current) {
+            clearTimeout(fadeTimeoutRef.current);
+            fadeTimeoutRef.current = null;
+          }
           isClosingRef.current = false;
+          invoke("set_copilot_alpha", { alpha: 1.0 }); // Reset alpha if fade was in progress
         }
 
       } catch (e) {
@@ -211,7 +237,12 @@ function Copilot() {
           clearTimeout(closeTimeoutRef.current);
           closeTimeoutRef.current = null;
         }
-        await getCurrentWindow().hide();
+        if (fadeTimeoutRef.current) {
+          clearTimeout(fadeTimeoutRef.current);
+          fadeTimeoutRef.current = null;
+        }
+        await invoke("hide_copilot");
+        await invoke("set_copilot_alpha", { alpha: 1.0 });
         setState("idle");
         setDisplayedText("");
         lastResponseTextRef.current = "";
@@ -229,6 +260,7 @@ function Copilot() {
         animationRef.current = null;
       }
       if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+      if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current);
     };
   }, []); // Empty deps - run once only
 
@@ -238,11 +270,59 @@ function Copilot() {
     return "";
   };
 
+  const handleClose = async () => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    if (fadeTimeoutRef.current) {
+      clearTimeout(fadeTimeoutRef.current);
+      fadeTimeoutRef.current = null;
+    }
+    await invoke("hide_copilot");
+    await invoke("set_copilot_alpha", { alpha: 1.0 });
+    setState("idle");
+    setDisplayedText("");
+    lastResponseTextRef.current = "";
+    textQueueRef.current = "";
+    isClosingRef.current = false;
+  };
+
   return (
-    <div style={containerStyle}>
+    <div
+      style={containerStyle}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {isHovered && (
+        <button
+          onClick={handleClose}
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            background: "rgba(255,255,255,0.1)",
+            border: "none",
+            borderRadius: "50%",
+            width: 24,
+            height: 24,
+            cursor: "pointer",
+            color: "#888",
+            fontSize: 14,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          ✕
+        </button>
+      )}
       <WaveAnimation state={state} />
+      {heardText && (state === "listening" || state === "thinking") && (
+        <p style={heardTextStyle}>"{heardText}"</p>
+      )}
       <div ref={textContainerRef} style={textContainerStyle} className="text-container">
-        {(state === "listening" || state === "thinking") && (
+        {(state === "listening" || state === "thinking") && !heardText && (
           <p style={statusTextStyle}>{getStatusText()}</p>
         )}
         {state === "responding" && (
@@ -257,17 +337,18 @@ function Copilot() {
       </div>
       <style>{`
         .markdown-response p {
-          margin: 0 0 0.5em 0;
+          margin: 0 0 0.3em 0;
         }
         .markdown-response p:last-of-type {
           margin-bottom: 0;
         }
         .markdown-response ul, .markdown-response ol {
-          margin: 0.5em 0;
-          padding-left: 1.5em;
+          margin: 0.2em 0;
+          padding-left: 1.2em;
         }
         .markdown-response li {
-          margin: 0.2em 0;
+          margin: 0;
+          padding: 0;
         }
         .markdown-response code {
           background: rgba(255, 255, 255, 0.1);
@@ -304,6 +385,7 @@ function Copilot() {
 }
 
 const containerStyle: React.CSSProperties = {
+  position: "relative",
   width: "100%",
   height: "100%",
   display: "flex",
@@ -334,10 +416,19 @@ const statusTextStyle: React.CSSProperties = {
 const responseTextStyle: React.CSSProperties = {
   color: "#e0e0e0",
   fontSize: "14px",
-  lineHeight: "1.5",
+  lineHeight: "1.1",
   textAlign: "left",
   whiteSpace: "pre-wrap",
   wordBreak: "break-word",
+};
+
+const heardTextStyle: React.CSSProperties = {
+  color: "#ff9500",
+  fontSize: "14px",
+  fontStyle: "italic",
+  textAlign: "center",
+  marginTop: "8px",
+  marginBottom: "0",
 };
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
